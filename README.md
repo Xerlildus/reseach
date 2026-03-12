@@ -1,15 +1,31 @@
-💬 1. Realtime & Scalable Chat Architecture
-การออกแบบระบบแชทในปี 2026 มุ่งเน้นไปที่ความเร็วระดับ Microseconds และการรองรับ Concurrency สูงด้วย WebTransport และ Redis Pub/Sub
+# 🚀 Engineering & Automation Research Hub 2026
+> A curated collection of modern architecture, security practices, and AI-driven automation.
 
-🛠️ Core Concepts
-WebTransport API: เทคโนโลยีใหม่ที่รันบน HTTP/3 ช่วยลด Latency และแก้ปัญหา Head-of-line blocking ของ WebSockets แบบเดิม
+---
 
-Pub/Sub Pattern: ใช้ Redis Streams หรือ NATS เพื่อทำ Message Broker กระจายข้อความไปยัง Server หลาย Instance
+## 📑 Table of Contents
+* [💬 1. Realtime & Scalable Chat](#1-realtime--scalable-chat)
+* [🔐 2. Frontend Security (SDK & API Key)](#2-frontend-security-sdk--api-key)
+* [🖼️ 3. Watermarking (Image & File)](#3-watermarking-image--file)
+* [📄 4. PDF Invoice Generator](#4-pdf-invoice-generator)
+* [🤖 5. Claude Code Tricks](#5-claude-code-tricks)
+* [🔌 6. Third-party Plugin Architecture](#6-third-party-plugin-architecture)
+* [🔍 7. Elasticsearch Mastery](#7-elasticsearch-mastery)
+* [⚙️ 8. n8n Automation Workflows](#8-n8n-automation-workflows)
+* [🎥 9. Auto-generate Video Content](#9-auto-generate-video-content)
 
-Message Persistence: การเก็บข้อมูลแบบลำดับเวลา (Time-series) โดยใช้ ScyllaDB หรือ MongoDB
+---
 
-💻 Code Example (Scaling with Redis Adapter)
-JavaScript
+## 💬 1. Realtime & Scalable Chat
+การออกแบบระบบ Chat ที่รองรับผู้ใช้หลักล้านด้วย **WebTransport** และ **Pub/Sub Mechanism**
+
+### 🛠️ Key Architecture
+* **WebTransport:** มาแทนที่ WebSocket เพื่อลด Latency ในระดับ Microseconds
+* **Redis Pub/Sub:** ใช้กระจาย Message ข้าม Server Instances (Horizontal Scaling)
+* **Persistence:** ใช้ **ScyllaDB** หรือ **Cassandra** สำหรับเก็บ Message ประวัติย้อนหลัง
+
+### 💻 Code Example (Node.js + Redis Adapter)
+```javascript
 const { Server } = require("socket.io");
 const { createAdapter } = require("@socket.io/redis-adapter");
 const { createClient } = require("redis");
@@ -18,154 +34,98 @@ const pubClient = createClient({ url: "redis://localhost:6379" });
 const subClient = pubClient.duplicate();
 
 const io = new Server(3000);
-io.adapter(createAdapter(pubClient, subClient)); // เชื่อมต่อทุก Server เข้าด้วยกันผ่าน Redis
+io.adapter(createAdapter(pubClient, subClient));
 
 io.on("connection", (socket) => {
-  socket.on("send-msg", (data) => {
-    io.emit("receive-msg", data); // กระจายข้อความไปหา User ทุกคนไม่ว่าจะอยู่ Server ไหน
-  });
+  socket.on("chat_message", (msg) => io.emit("broadcast", msg));
 });
-Sources: Socket.io Scaling Guide, WebTransport Web API
 
-🔐 2. Frontend Security: SDK & API Key Protection
-แนวทางการป้องกัน API Key รั่วไหลเมื่อต้องใช้งานบน Client-side (Frontend) โดยใช้รูปแบบ BFF
+🔐 2. Frontend Security (SDK & API Key)
+การป้องกัน API Key รั่วไหลบน Client-side ด้วย BFF Pattern
 
-🛠️ Core Concepts
-BFF (Backend-for-Frontend): สร้าง Proxy Server เพื่อเก็บ Secret Key ไว้หลังบ้าน และให้ Frontend เรียกผ่าน Proxy เท่านั้น
+🛡️ Best Practices
+BFF (Backend-for-Frontend): Frontend ไม่เรียก API ตรงๆ แต่เรียกผ่าน Proxy ของตัวเอง
 
-App Check & Attestation: ใช้บริการอย่าง Firebase App Check เพื่อตรวจสอบว่า Request มาจาก App จริง ไม่ใช่ Bot
+App Check: ใช้ตัวตรวจสอบ Attestation เพื่อยืนยันว่า Request มาจากแอปจริงเท่านั้น
 
-Scoping: จำกัดสิทธิ์ API Key ให้ทำได้เฉพาะงานที่จำเป็น (Least Privilege)
+Domain Whitelisting: จำกัดการใช้งาน Key เฉพาะ Origin URL ที่ระบุ
 
-💻 Code Example (Next.js API Proxy)
+💻 Implementation (Next.js Proxy)
 JavaScript
-// /api/secure-fetch.js (Server-side)
+// pages/api/proxy.js
 export default async function handler(req, res) {
-  const secretKey = process.env.THIRD_PARTY_API_KEY; // เก็บไว้ใน Environment Variable เท่านั้น
-  const response = await fetch('https://api.service.com/data', {
-    headers: { 'Authorization': `Bearer ${secretKey}` }
+  const response = await fetch('[https://api.external.com/data](https://api.external.com/data)', {
+    headers: { 'Authorization': `Bearer ${process.env.PRIVATE_KEY}` }
   });
-  const data = await response.json();
-  res.status(200).json(data);
+  res.status(200).json(await response.json());
 }
-Sources: OWASP API Security Top 10, Auth0 BFF Pattern
 
-🖼️ 3. Advanced Watermarking (Image & Files)
-การทำลายน้ำเพื่อป้องกันการละเมิดลิขสิทธิ์และการระบุตัวตนผู้ทำข้อมูลรั่วไหล (Digital Forensics)
+🖼️ 3. Watermarking (Image & File)
+ระบบป้องกันการคัดลอกและตรวจสอบที่มาของข้อมูล (Digital Forensics)
 
-🛠️ Core Concepts
-Visible Watermark: ใช้เลเยอร์ภาพโปร่งแสงทับบนไฟล์ต้นฉบับ
+🧩 Methods
+Visible: ใช้ Sharp (Node.js) ซ้อน Layer ลายน้ำแบบโปร่งแสง
 
-Invisible Watermarking: การฝัง Metadata ลงในพิกเซลภาพ หรือการขยับระยะห่างตัวอักษรใน PDF (Kerning) ที่มองด้วยตาเปล่าไม่เห็น
+Invisible: ฝัง Metadata ลงในพิกเซลภาพ (LSB) หรือปรับ Kerning ใน PDF
 
-💻 Code Example (Sharp for Image)
-JavaScript
-const sharp = require('sharp');
-
-async function applyWatermark(inputPath, outputPath, userId) {
-  const watermark = Buffer.from(`<svg>...</svg>`); // สร้างลายน้ำ Dynamic ตาม User ID
-  await sharp(inputPath)
-    .composite([{ input: watermark, gravity: 'center', blend: 'over' }])
-    .toFile(outputPath);
-}
-Sources: Sharp Node.js Library, Steg.AI
+Dynamic: ฝัง User ID ลงในพื้นหลังเมื่อมีการ Preview ไฟล์
 
 📄 4. PDF Invoice Generator
-การสร้างใบแจ้งหนี้แบบอัตโนมัติที่รองรับภาษาไทยและการจัดวาง Layout ที่ซับซ้อน
+การสร้างเอกสารทางการที่รองรับภาษาไทย 100% และ Layout ที่แม่นยำ
 
-🛠️ Core Concepts
-Headless Browser Engine: ใช้ Playwright หรือ Puppeteer เพื่อเรนเดอร์ HTML/CSS เป็น PDF
+🚀 Recommended Stack
+Engine: Playwright หรือ Puppeteer (HTML-to-PDF)
 
-Template Engine: ใช้ Handlebars หรือ EJS เพื่อฉีดข้อมูล JSON เข้าไปใน Template HTML
+Library: react-pdf สำหรับ Client-side หรือ jsPDF สำหรับงานง่ายๆ
 
-💻 Code Example (Playwright PDF)
-JavaScript
-const { chromium } = require('playwright');
+Font: ต้องใช้ Google Fonts (เช่น Sarabun) และรองรับ Subset ภาษาไทย
 
-async function createPDF(invoiceData) {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
-  await page.setContent(`<h1>Invoice #${invoiceData.id}</h1>`); // หรือโหลดจากไฟล์ Template
-  await page.pdf({ path: 'invoice.pdf', format: 'A4', printBackground: true });
-  await browser.close();
-}
-Sources: Playwright Documentation
+🤖 5. Claude Code Tricks
+เทคนิคการใช้ AI Agent จัดการ Codebase ขนาดใหญ่
 
-🤖 5. Claude Code & AI Agent Tricks
-เทคนิคการใช้ Claude Code (AI CLI) ให้ทำงานร่วมกับ codebase ขนาดใหญ่ได้อย่างแม่นยำ
+💡 Effective Hacks
+MCP (Model Context Protocol): เชื่อมต่อ Claude กับฐานข้อมูลในเครื่องหรือ GitHub โดยตรง
 
-🛠️ Core Concepts
-MCP (Model Context Protocol): เชื่อมต่อ Claude เข้ากับ Local Database หรือ API ภายนอกเพื่อให้ AI มีข้อมูลจริง
+Task Decomposition: สั่งงานแยกส่วน เช่น Plan -> Implement -> Test
 
-Prompt Engineering for Agents: การระบุขอบเขตไฟล์ (Scoping) และการใช้คำสั่ง @file เพื่อประหยัด Token
+Custom Rules: ใช้ไฟล์ .claudecode เพื่อบังคับ Standard ของโปรเจกต์
 
-💡 The Trick
-สร้างไฟล์ .cursorrules หรือ .claudecode เพื่อบังคับสไตล์การเขียนโค้ด เช่น:
+🔌 6. Third-party Plugin Architecture
+การออกแบบ Product ให้เป็น Platform ที่นักพัฒนาภายนอกมาต่อเติมได้
 
-"Always use functional components and Tailwind CSS for UI tasks."
+🏗️ Design Steps
+Sandboxing: รัน Plugin ใน Iframe หรือ Web Worker เพื่อความปลอดภัย
 
-Sources: Anthropic MCP Guide, Claude.ai News
+Standard API: สร้าง PluginSDK ให้ Plugin เรียกใช้ฟังก์ชันในระบบหลัก
 
-🔌 6. Designing for Third-party Plugins
-การเปลี่ยนซอฟต์แวร์ให้เป็นแพลตฟอร์มด้วยระบบ Plugin
+Event Hooks: ใช้ Webhooks เพื่อส่งข้อมูลเหตุการณ์ไปยัง Plugin
 
-🛠️ Core Concepts
-Iframe Sandboxing: รันโค้ด Plugin ใน Iframe ที่แยกสิทธิ์ออกจากตัวแอปหลักเพื่อความปลอดภัย
+🔍 7. Elasticsearch Mastery
+การค้นหาข้อมูลมหาศาลด้วยความเร็วระดับ Milliseconds
 
-Manifest System: ใช้ไฟล์ JSON เพื่อนิยามสิทธิ์ (Permissions) และจุดเชื่อมต่อ (Entry points)
+⚡ Critical Skills
+Vector Search: ใช้เก็บ Embedding เพื่อทำ Semantic Search (ค้นหาด้วยความหมาย)
 
-Webhooks: แจ้งเตือน Plugin เมื่อเกิดเหตุการณ์สำคัญในระบบ
+Analyzers: ตั้งค่า icu_analyzer เพื่อตัดคำภาษาไทยให้แม่นยำ
 
-Sources: Figma Plugin API Architecture, Shopify App Bridge
+Kibana: ใช้ทำ Visualizer และ Monitoring สุขภาพของ Cluster
 
-🔍 7. Elasticsearch: High Performance Search
-การจัดการ Big Data และการค้นหาแบบ Semantic Search (ค้นหาด้วยความหมาย)
+⚙️ 8. n8n Automation Workflows
+การทำ Workflow Automation แบบ Low-code ที่ทรงพลัง
 
-🛠️ Core Concepts
-Inverted Index: โครงสร้างข้อมูลที่ช่วยให้ค้นหาคำได้ในระดับมิลลิวินาที
+🌊 Workflow Pattern
+Trigger: รับ Webhook หรือตั้งเวลา (Cron)
 
-Vector Search: การเก็บข้อมูลเป็นตัวเลข (Embeddings) เพื่อให้ค้นหาภาพหรือข้อความที่ "คล้ายกัน" ได้
+Logic: ใช้ Function Node (JavaScript) เมื่อ Logic ซับซ้อนเกินไป
 
-💻 Query Example (Hybrid Search)
-JSON
-GET /products/_search
-{
-  "query": {
-    "bool": {
-      "must": { "match": { "category": "electronics" } },
-      "should": { "knn": { "field": "desc_vector", "query_vector": [...] } }
-    }
-  }
-}
-Sources: Elasticsearch Official Docs
+Error Handling: สร้าง Error Node เพื่อส่ง Alert เข้า Slack เมื่อระบบพัง
 
-⚙️ 8. Workflow Automation with n8n
-การเชื่อมต่อ App ต่างๆ เข้าด้วยกันแบบ Low-code โดยไม่ต้องเขียน Script เยอะ
+🎥 9. Auto-generate Video Content
+การสร้างวิดีโอระดับ Production ผ่านโค้ดและ AI
 
-🛠️ Core Concepts
-Node-based Workflow: ลากเส้นเชื่อมต่อระหว่าง App เช่น Gmail -> n8n -> Slack
+🎬 Pipeline
+Script: ใช้ Claude สร้าง Content JSON
 
-Self-hosting: ติดตั้ง n8n บน Docker เพื่อควบคุมความปลอดภัยของข้อมูลเอง 100%
+Audio: ใช้ ElevenLabs API พากย์เสียงภาษาไทย
 
-💡 Implementation Tip
-ใช้ Error Trigger Node ทุกครั้งเพื่อสร้างระบบแจ้งเตือนเข้า Telegram เมื่อ Workflow มีปัญหา
-
-Sources: n8n Documentation, n8n Workflow Library
-
-🎥 9. Auto-generated Video Content
-การสร้างวิดีโอโดยใช้ AI ตั้งแต่การเขียนสคริปต์ไปจนถึงการเรนเดอร์
-
-🛠️ Core Concepts
-Synthesis: ใช้ ElevenLabs สำหรับพากย์เสียงภาษาไทย
-
-Composition: ใช้ Remotion (React) ในการจัดวาง Element ในวิดีโอผ่านโค้ด
-
-Automation: เขียน Script เรียก API เพื่อ Generate วิดีโอทีละหลายร้อยตัวตามข้อมูลใน Database
-
-💻 Code Structure (Remotion)
-JavaScript
-import { createRoot } from 'remotion';
-import { MyVideo } from './MyVideo';
-
-createRoot(document.getElementById('root')).render(<MyVideo title="Hello AI" />);
-Sources: Remotion.dev, [ลิงค์ที่น่าสงสัยถูกลบ]
+Render: ใช้ Remotion (React) ในการ Render ภาพและเสียงเป็น MP4
