@@ -1,3 +1,7 @@
+# 💬 1. ระบบแชท Realtime และ Scalable
+
+
+
 ## สถาปัตยกรรมระดับลึก (In-depth Architecture)
 การสร้างระบบแชทที่รองรับผู้ใช้งานหลักล้าน (Million concurrent users) ต้องเผชิญกับความท้าทายเรื่อง "Connection Storm" และการรักษาลำดับของข้อความ (Message Consistency)
 
