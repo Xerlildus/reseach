@@ -118,14 +118,12 @@ pub fn calculate_tax(amount: f64) -> f64 {
 * **Self-Hosted:** ติดตั้งผ่าน Docker บน Server ตัวเองเพื่อความปลอดภัยของข้อมูลและความประหยัด
 * **Webhooks:** ใช้ n8n เป็นตัวรับ Data จากแอปหนึ่ง (เช่น Typeform) แล้วส่งไปประมวลผลต่อในแอปอื่น (เช่น Google Sheet + ChatGPT)
 * **Example:** **HR Automation** - เมื่อมีคนกรอกใบสมัคร -> n8n ส่ง Resume ไปให้ AI สรุปคะแนน -> ถ้าคะแนนสูงส่งแจ้งเตือนเข้า Slack ของทีม HR
-```javascript
-// n8n Function Node
-for (const item of $input.all()) {
-  item.json.is_priority = item.json.amount > 1000 ? true : false;
-  item.json.processed_at = new Date().toISOString();
-}
-return $input.all();
-```
+การสร้าง Workflow ใน n8n มักใช้ Node ต่อกัน:
+
+Webhook Node: รับข้อมูลจาก Form
+AI Agent Node: ส่งข้อมูลไปวิเคราะห์ที่ OpenAI/Claude
+Slack Node: ส่งผลลัพธ์เข้าช่องทางทีม
+
 ## 🎥 9. Auto-generate Video Content
 การสร้างวิดีโอผ่าน React (Remotion)
 * **Rendering API:** ใช้ **Shotstack** หรือ **Creatomate** เพื่อประกอบ Video Assets (Clip, Text, Audio) ผ่าน API
