@@ -29,26 +29,114 @@ async function sendMessage(roomId, senderId, text) {
   });
 }
 ```
+---
 
+## 🏗️ สถาปัตยกรรมระดับลึก (In-depth Architecture)
+
+การสร้างระบบที่รองรับผู้ใช้งานจำนวนมหาศาลต้องเผชิญกับความท้าทายหลัก 3 ด้าน:
+
+### 1. การจัดการการเชื่อมต่อข้ามโหนด (Node Intercommunication)
+เมื่อระบบมี Server หลาย Node (Horizontal Scaling) ผู้ใช้ที่อยู่คนละ Server จะคุยกันไม่ได้หากไม่มีตัวกลาง
+* **Solution:** ใช้ **Redis Pub/Sub** หรือ **Redis Streams** เป็น Message Broker กลาง
+* **Why Streams?** เพราะรองรับการจองคิวข้อความ (Persistence) ป้องกันข้อความหายระหว่างที่ Network กระตุก (Transient Failure)
+
+
+
+### 2. โครงสร้างพื้นฐาน Network
+* **Load Balancer:** ต้องรองรับ Layer 7 และทำ **Sticky Sessions (Session Affinity)** เพื่อให้การทำ WebSocket Handshake สำเร็จที่โหนดเดิมเสมอ
+* **Protocol:** ควรใช้ WSS (WebSocket Secure) เพื่อความปลอดภัยและหลีกเลี่ยงการโดน Block จาก Proxy บางตัว
+
+### 3. การขยายฐานข้อมูล (Scalable Storage)
+* **Write-Heavy Load:** ข้อมูลแชทเน้นการเขียน (Write) มหาศาล
+* **Storage Choice:** **ScyllaDB** หรือ **Cassandra** เหมาะที่สุดเพราะทำ Sharding ตาม `chat_room_id` ได้ดีเยี่ยม ทำให้การดึง History ของห้องนั้นๆ ทำได้รวดเร็ว (Low Latency)
+
+---
+
+## 🛠️ แนะนำ Open Source สำหรับศึกษาต่อ
+หากไม่อยากเริ่มจากศูนย์ (Build from scratch) แนะนำให้ศึกษาโปรเจกต์เหล่านี้:
+1. **[Centrifugo](https://github.com/centrifugal/centrifugo):** Real-time messaging server ที่ Scalable มาก (เขียนด้วย Go)
+2. **[Socket.io](https://socket.io/):** มาตรฐานสำหรับ Node.js (ต้องใช้คู่กับ Redis Adapter)
+3. **[NATS.io](https://nats.io/):** Cloud-native messaging system ที่เร็วกว่า Redis Pub/Sub ในบาง Scenario
+
+---
+
+## 🧪 Lab: Distributed Chat with Redis Streams
+Lab นี้จะจำลองการรัน Chat Server 2 ตัวที่คุยกันผ่าน Redis
+
+### 1. ไฟล์ `docker-compose.yaml`
+```yaml
+version: '3.8'
+services:
+  redis:
+    image: redis:alpine
+    ports: ["6379:6379"]
+
+  chat-node-1:
+    image: node:18-alpine
+    command: sh -c "npm install redis && node server.js"
+    environment:
+      - PORT=3001
+      - NODE_ID=SERVER_A
+    volumes: ["./:/app"]
+    working_dir: /app
+    ports: ["3001:3001"]
+
+  chat-node-2:
+    image: node:18-alpine
+    command: sh -c "npm install redis && node server.js"
+    environment:
+      - PORT=3002
+      - NODE_ID=SERVER_B
+    volumes: ["./:/app"]
+    working_dir: /app
+    ports: ["3002:3002"]
+```
+2. ไฟล์ server.js (Logic ของ Consumer)
+```JavaScript
+const redis = require('redis');
+const client = redis.createClient({ url: 'redis://redis:6379' });
+
+async function start() {
+  await client.connect();
+  console.log(`[${process.env.NODE_ID}] Connected to Redis`);
+
+  let lastId = '$'; // อ่านเฉพาะข้อความใหม่ที่เข้ามาหลังจาก Start
+
+  while (true) {
+    const results = await client.xRead(
+      redis.commandOptions({ isolated: true }),
+      { key: 'chat_stream', id: lastId },
+      { COUNT: 1, BLOCK: 5000 }
+    );
+
+    if (results) {
+      results.forEach(result => {
+        result.messages.forEach(msg => {
+          console.log(`[${process.env.NODE_ID}] New Msg: ${msg.data.text}`);
+          lastId = msg.id; // Update ID ล่าสุดที่อ่านแล้ว
+        });
+      });
+    }
+  }
+}
+start();
+```
 ## ⚠️ ข้อควรระวังและการจัดการปัญหา (Gotchas & Pitfalls)
-## การพัฒนาระบบ Realtime ที่รองรับผู้ใช้งานจำนวนมหาศาลมักเต็มไปด้วยความท้าทายที่คาดไม่ถึง นี่คือประเด็นสำคัญที่คุณต้องออกแบบระบบเพื่อรองรับ:
 
-### 1. การจัดการการเชื่อมต่อใหม่ (Connection Storm / Thundering Herd Problem)
-* **ปัญหา: หากเซิร์ฟเวอร์หลักล่มพร้อมกันหมด และเมื่อเซิร์ฟเวอร์กลับมาออนไลน์ใหม่ ผู้ใช้งานทุกคนจะพยายาม "Reconnect" เข้ามาพร้อมกันทันที ทำให้เกิดการโหลดเกิน (Load Spike) จนเซิร์ฟเวอร์ล่มซ้ำ (Cascading Failure)**
+การพัฒนาระบบ Realtime ที่รองรับผู้ใช้งานจำนวนมหาศาลมักเต็มไปด้วยความท้าทายที่คาดไม่ถึง นี่คือประเด็นสำคัญที่คุณต้องออกแบบระบบเพื่อรองรับ:
 
-* **วิธีแก้: ใช้เทคนิค Exponential Backoff with Jitter โดยให้ฝั่ง Client สุ่มระยะเวลาในการหน่วงการ Retry เพื่อกระจายโหลดไม่ให้เข้าสู่เซิร์ฟเวอร์พร้อมกันทั้งหมด**
+### 1. การจัดการการเชื่อมต่อใหม่ (Connection Storm / Thundering Herd)
+* **ปัญหา:** หาก Server ล่มพร้อมกัน และเมื่อกลับมาออนไลน์ ผู้ใช้งานทุกคนจะพยายาม Reconnect ทันที ทำให้เกิด **Load Spike** จนระบบล่มซ้ำ (Cascading Failure)
+* **วิธีแก้:** ใช้เทคนิค **Exponential Backoff with Jitter** โดยให้ฝั่ง Client สุ่มระยะเวลาในการหน่วงการ Retry เพื่อกระจายโหลดไม่ให้เข้าสู่เซิร์ฟเวอร์พร้อมกันทั้งหมด
 
 ### 2. การเรียงลำดับข้อความ (Message Ordering)
-* **ปัญหา: ในระบบที่มี Distributed Server หลายโหนด ข้อความอาจเดินทางถึงปลายทางไม่ตรงลำดับ (เช่น ข้อความที่ 2 มาถึงก่อนข้อความที่ 1) เนื่องจากความแตกต่างของ Network Latency ในแต่ละเส้นทาง**
+* **ปัญหา:** ในระบบ Distributed ข้อความอาจเดินทางถึงปลายทางไม่ตรงลำดับเนื่องจาก Network Latency (เช่น ข้อความที่ 2 มาถึงก่อนข้อความที่ 1)
+* **วิธีแก้:** ฝั่ง Server ควรแนบ **Global Timestamp** หรือใช้ **Sequence Number** จากตัวกลางเดียวกัน (เช่น Redis Atomic Counter หรือ Snowflake ID) เพื่อให้ Client ใช้เรียงลำดับบนหน้าจอได้ถูกต้อง
 
-* **วิธีแก้: ฝั่ง Server ควรแนบ Global Timestamp หรือใช้ Sequence Number ที่ออกมาจากตัวกลางเดียวกัน (เช่น Redis Atomic Counter) เพื่อให้ฝั่ง Client ใช้ในการเรียงลำดับข้อความบนหน้าจอแชทให้ถูกต้อง**
+### 3. การจัดการ Memory รั่วไหล (Memory Leaks ใน WebSocket)
+* **ปัญหา:** การเปิด Connection ทิ้งไว้โดยไม่มีการ Cleanup เมื่อ User ปิดแอปฯ หรือเน็ตหลุด จะทำให้ Connection ค้างใน RAM จนหน่วยความจำเต็ม
+* **วิธีแก้:** ต้องทำระบบ **Heartbeat (Ping/Pong)** เพื่อตรวจสอบสถานะการเชื่อมต่อ และตั้งค่า **Timeout** เพื่อตัดการเชื่อมต่อทันทีหากไม่ได้รับสัญญาณตอบกลับ
 
-### 3. การจัดการ Memory รั่วไหลใน WebSocket (Memory Leaks)
-* **ปัญหา: การเปิด Connection ทิ้งไว้โดยไม่มีการ Cleanup เมื่อ User ปิดแอปฯ หรือหลุดจากอินเทอร์เน็ต จะทำให้ Connection เหล่านั้นค้างอยู่ใน RAM ของเซิร์ฟเวอร์จนหน่วยความจำเต็ม**
-
-* **วิธีแก้: ต้องทำระบบ Heartbeat (Ping/Pong) เพื่อตรวจสอบสถานะการเชื่อมต่อ และตั้งค่า Timeout เพื่อตัดการเชื่อมต่อ (Close Connection) ทันทีหากไม่ได้รับสัญญาณตอบกลับภายในเวลาที่กำหนด**
-
-### 4. การจัดการสถานะออนไลน์/ออฟไลน์ (Presence System)
-* **ปัญหา: การ Query ฐานข้อมูลโดยตรงเพื่อเช็คว่าใครออนไลน์อยู่บ้างนั้นช้าเกินไปและสิ้นเปลืองทรัพยากร**
-
-* **วิธีแก้: ใช้ Redis Key (Set/Hash) แบบมี TTL (Time-to-Live) เพื่อเก็บสถานะออนไลน์ชั่วคราว และใช้ Redis Pub/Sub แจ้งเตือนสถานะแบบ Realtime เมื่อมีการ Login/Logout หรือหลุดจากการเชื่อมต่อ**
+### 4. การจัดการสถานะออนไลน์ (Presence System)
+* **ปัญหา:** การ Query Database โดยตรงเพื่อเช็คสถานะออนไลน์นั้นช้าเกินไปและสิ้นเปลืองทรัพยากร
+* **วิธีแก้:** ใช้ **Redis Key (Set/Hash) แบบมี TTL (Time-to-Live)** เพื่อเก็บสถานะชั่วคราว และใช้ **Redis Pub/Sub** แจ้งเตือนเพื่อนร่วมห้องแชทแบบ Realtime เมื่อมีคน Login/Logout
